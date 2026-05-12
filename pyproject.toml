@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=67", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "e3candump"
+version = "0.1.0"
+description = "Viessmann E3 CAN-bus monitor – Collect and Service 77 protocol decoder"
+readme = "README.md"
+license = {file = "LICENSE"}
+authors = [
+    {name = "MyHomeMyData", email = "juergen.bonfert@gmail.com"},
+]
+requires-python = ">=3.10"
+dependencies = [
+    "python-can>=4.3",
+]
+keywords = ["can", "viessmann", "e3", "iso-tp", "collect", "candump", "heat-pump"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Embedded Systems",
+    "Topic :: System :: Monitoring",
+]
+
+[project.urls]
+Homepage = "https://github.com/MyHomeMyData/e3candump"
+Source = "https://github.com/MyHomeMyData/e3candump"
+"Bug Tracker" = "https://github.com/MyHomeMyData/e3candump/issues"
+
+[project.scripts]
+e3candump = "e3candump.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
