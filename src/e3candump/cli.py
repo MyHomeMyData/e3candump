@@ -8,6 +8,7 @@ import sys
 import can
 
 from e3candump import __version__
+from e3candump.devices import load_devices
 from e3candump.formatter import format_event
 from e3candump.monitor import DEFAULT_COLLECT_IDS, monitor
 
@@ -81,6 +82,15 @@ examples:
 
     s77 = p.add_argument_group("Service 77 configuration")
     s77.add_argument(
+        "--devices",
+        default="devices.json",
+        metavar="FILE",
+        help=(
+            "open3e devices.json to auto-configure S77 pairs and device names "
+            "(default: devices.json in current directory; silently ignored if absent)"
+        ),
+    )
+    s77.add_argument(
         "--s77-pair",
         action="append",
         dest="s77_pairs",
@@ -144,7 +154,10 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     collect_ids = tuple(args.collect_ids) if args.collect_ids else DEFAULT_COLLECT_IDS
-    s77_pairs: list[tuple[int, int]] = args.s77_pairs or []
+
+    device_names = load_devices(args.devices)
+    # Merge: device pairs first, then explicit --s77-pair (additive, no dedup needed)
+    s77_pairs: list[tuple[int, int]] = list(device_names) + (args.s77_pairs or [])
 
     try:
         for event in monitor(
@@ -162,6 +175,7 @@ def main(argv: list[str] | None = None) -> None:
                 no_collect=args.no_collect,
                 no_s77_push=args.no_s77_push,
                 no_s77_write=args.no_s77_write,
+                device_names=device_names,
             )
             if line is not None:
                 print(line, flush=True)

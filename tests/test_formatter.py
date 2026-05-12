@@ -103,6 +103,32 @@ def test_s77_write_ok_text():
     assert "dt=" in line
 
 
+def test_s77_write_device_name_text():
+    names = {(0x682, 0x692): "HPMUMASTER"}
+    line = format_event(_s77_write(), use_json=False, payload=False, verbose=False,
+                        device_names=names)
+    assert "HPMUMASTER" in line
+    assert "0x0682" not in line
+
+
+def test_s77_write_device_name_json():
+    names = {(0x682, 0x692): "HPMUMASTER"}
+    import json as _json
+    line = format_event(_s77_write(), use_json=True, payload=False, verbose=False,
+                        device_names=names)
+    obj = _json.loads(line)
+    assert obj["device"] == "HPMUMASTER"
+
+
+def test_s77_unknown_pair_no_name():
+    """Pairs not in device_names fall back to hex addresses."""
+    names = {(0x683, 0x693): "OTHER"}
+    line = format_event(_s77_write(), use_json=False, payload=False, verbose=False,
+                        device_names=names)
+    assert "0x0682→0x0692" in line
+    assert "OTHER" not in line
+
+
 def test_s77_write_timeout_text():
     ev = _s77_write(status="timeout", dt=None)
     line = format_event(ev, use_json=False, payload=False, verbose=False)

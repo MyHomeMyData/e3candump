@@ -46,12 +46,18 @@ def format_collect_text(event: CollectEvent, payload: bool = False) -> str:
     return line
 
 
-def format_s77_text(event: S77Event, payload: bool = False, verbose: bool = False) -> str | None:
+def format_s77_text(
+    event: S77Event,
+    payload: bool = False,
+    verbose: bool = False,
+    device_names: dict[tuple[int, int], str] | None = None,
+) -> str | None:
     if event.kind == "session" and not verbose:
         return None
 
     ts = _ts(event.timestamp)
-    ids = f"{_hex(event.request_id)}→{_hex(event.response_id)}"
+    pair = (event.request_id, event.response_id)
+    ids = (device_names or {}).get(pair) or f"{_hex(event.request_id)}→{_hex(event.response_id)}"
 
     if event.kind == "write":
         kind = "S77"
@@ -138,7 +144,12 @@ def format_collect_json(event: CollectEvent, payload: bool = False) -> str:
     return json.dumps(obj)
 
 
-def format_s77_json(event: S77Event, payload: bool = False, verbose: bool = False) -> str | None:
+def format_s77_json(
+    event: S77Event,
+    payload: bool = False,
+    verbose: bool = False,
+    device_names: dict[tuple[int, int], str] | None = None,
+) -> str | None:
     if event.kind == "session" and not verbose:
         return None
 
@@ -150,6 +161,9 @@ def format_s77_json(event: S77Event, payload: bool = False, verbose: bool = Fals
         "session_ctr": event.session_ctr,
         "status": event.status,
     }
+    name = (device_names or {}).get((event.request_id, event.response_id))
+    if name:
+        obj["device"] = name
 
     if event.kind in ("write", "push"):
         obj["did"] = event.did
@@ -183,6 +197,7 @@ def format_event(
     no_collect: bool = False,
     no_s77_push: bool = False,
     no_s77_write: bool = False,
+    device_names: dict[tuple[int, int], str] | None = None,
 ) -> str | None:
     if isinstance(event, CollectEvent):
         if no_collect:
@@ -196,6 +211,6 @@ def format_event(
         if no_s77_write and event.kind == "write":
             return None
         if use_json:
-            return format_s77_json(event, payload=payload, verbose=verbose)
-        return format_s77_text(event, payload=payload, verbose=verbose)
+            return format_s77_json(event, payload=payload, verbose=verbose, device_names=device_names)
+        return format_s77_text(event, payload=payload, verbose=verbose, device_names=device_names)
     return None
