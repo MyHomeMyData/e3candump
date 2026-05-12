@@ -100,6 +100,18 @@ def test_sn_wrap_0x2f_to_0x20():
 
 # ── Unknown CAN-ID ───────────────────────────────────────────────────────────
 
+def test_sf_length_code_8x():
+    """Length code 0x82 (0x8x family) → 2-byte payload, same as 0xB2."""
+    d = dec()
+    frame = bytes([0x21, 0x8C, 0x01, 0x82, 0xB8, 0x01, 0x55, 0x55])
+    ev = d.feed(CAN_ID, frame, 1.0)
+    assert isinstance(ev, CollectEvent)
+    assert ev.did == 0x018C
+    assert ev.data_length == 2
+    assert ev.frame_type == "SF"
+    assert ev.payload == bytes([0xB8, 0x01])
+
+
 def test_unknown_can_id_ignored():
     d = dec()
     ev = d.feed(0x999, bytes([0x21, 0x40, 0x01, 0xB1, 0xAB, 0, 0, 0]), 1.0)

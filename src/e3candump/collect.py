@@ -76,10 +76,13 @@ class CollectDecoder:
         did = int.from_bytes(data[1:3], "little")
         length_code = data[3]
 
-        if 0xB1 <= length_code <= 0xBF:
-            total_length = length_code - 0xB0
+        low = length_code & 0x0F
+        if low != 0:
+            # Length encoded in low nibble (0x8x and 0xBx both valid)
+            total_length = low
             payload_start = 4
-        elif length_code == 0xB0:
+        elif length_code != 0:
+            # Low nibble == 0: length in next byte
             if len(data) < 6:
                 return None
             if data[4] == 0xC1:

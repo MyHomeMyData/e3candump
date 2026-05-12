@@ -31,16 +31,22 @@ from e3candump.isotp import IsotpReassembler
 
 
 def _decode_length_code(payload: bytes, offset: int) -> tuple[int, int]:
-    """Return (data_length, data_start_offset) from a Viessmann length code."""
+    """Return (data_length, data_start_offset) from a Viessmann length code.
+
+    The length is always encoded in the low nibble of the code byte.
+    Devices use 0xBx and 0x8x interchangeably (e.g. 0xB2 and 0x82 both mean 2 bytes).
+    Low nibble == 0 means the next byte carries the length (16–255 bytes),
+    with the 0xC1 escape for values that would otherwise be ambiguous.
+    """
     code = payload[offset]
-    if 0xB1 <= code <= 0xBF:
-        return code - 0xB0, offset + 1
-    if code == 0xB0:
-        next_byte = payload[offset + 1]
-        if next_byte == 0xC1:
-            return payload[offset + 2], offset + 3
-        return next_byte, offset + 2
-    return 0, offset + 1
+    low = code & 0x0F
+    if low != 0:
+        return low, offset + 1
+    # low nibble == 0: length in next byte
+    next_byte = payload[offset + 1]
+    if next_byte == 0xC1:
+        return payload[offset + 2], offset + 3
+    return next_byte, offset + 2
 
 
 @dataclass

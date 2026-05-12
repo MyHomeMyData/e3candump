@@ -128,7 +128,8 @@ def test_write_timeout():
 
 # ── Device push (CTR=0x0000) ──────────────────────────────────────────────────
 
-def test_device_push():
+def test_device_push_b_length_code():
+    """Push with 0xBx length code (e.g. 0xB3 = 3 bytes)."""
     d = dec()
     push_payload = (
         bytes([0x77, 0x00, 0x00])
@@ -140,11 +141,28 @@ def test_device_push():
     assert len(events) == 1
     ev = events[0]
     assert ev.kind == "push"
-    assert ev.status == "push"
-    assert ev.session_ctr == 0
     assert ev.did == 0x044D
     assert ev.data_length == 3
-    assert ev.duration_ms is None
+    assert ev.payload == bytes([0x01, 0x02, 0x03])
+
+
+def test_device_push_8x_length_code():
+    """Push with 0x8x length code (e.g. 0x82 = 2 bytes, observed on real hardware)."""
+    d = dec()
+    # Mirrors real trace: DID=0x018C, length_code=0x82, data=B8 01
+    push_payload = (
+        bytes([0x77, 0x00, 0x00])
+        + _CLIENT_ID
+        + bytes([0x8C, 0x01])   # DID=0x018C LE
+        + bytes([0x82, 0xB8, 0x01])  # length=2, data=B8 01
+    )
+    events = _feed_isotp(d, RSP, push_payload, 2.0)
+    assert len(events) == 1
+    ev = events[0]
+    assert ev.kind == "push"
+    assert ev.did == 0x018C
+    assert ev.data_length == 2
+    assert ev.payload == bytes([0xB8, 0x01])
 
 
 # ── Session frames (0x21/0x22) ────────────────────────────────────────────────

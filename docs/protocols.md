@@ -54,15 +54,21 @@ frame type:
 
 | Byte 3 (`v3`) | Byte 4 (`v4`) | Type | Payload length | Payload starts at |
 |---|---|---|---|---|
-| `0xB1`–`0xB4` | any | Single Frame | `v3 − 0xB0` (1–4 bytes) | Byte 4 |
-| `0xB5`–`0xBF` | any | Multi Frame | `v3 − 0xB0` (5–15 bytes) | Byte 4 |
-| `0xB0` | ≠ `0xC1` | Multi Frame | `v4` (16–255 bytes) | Byte 5 |
-| `0xB0` | `0xC1` | Multi Frame | Byte 5 (`v5`) | Byte 6 |
+| low nibble 1–4 | any | Single Frame | low nibble of `v3` (1–4 bytes) | Byte 4 |
+| low nibble 5–F | any | Multi Frame | low nibble of `v3` (5–15 bytes) | Byte 4 |
+| low nibble 0 | ≠ `0xC1` | Multi Frame | `v4` (16–255 bytes) | Byte 5 |
+| low nibble 0 | `0xC1` | Multi Frame | Byte 5 (`v5`) | Byte 6 |
 
-The `0xC1` escape in the last row is used when the payload length value itself
-would equal `0xB5` or `0xC1`, to avoid ambiguity with those special byte
-values. In practice this has been observed for a payload length of `0xB5`
-(181 bytes).
+**Length encoding rule:** the payload length is always the **low nibble** of
+byte 3 (`v3 & 0x0F`). The high nibble is ignored for length purposes.
+Observed high-nibble values include `0x8` and `0xB`; both encode the same
+lengths (e.g. `0x82` and `0xB2` both mean 2 bytes).
+
+Low nibble = 0 signals a two-byte length field: the actual length is in
+byte 4 (`v4`), except when `v4 = 0xC1`, which is an escape byte — the true
+length is then in byte 5 (`v5`). The `0xC1` escape avoids ambiguity when the
+payload length value itself would equal `0xB5` or `0xC1`. In practice this
+has been observed for a payload length of `0xB5` (181 bytes).
 
 ---
 
@@ -432,7 +438,7 @@ Bytes 9+:   [DATA ...]
 | Session counter | 2 | 16-bit little-endian counter; monotonically increasing across all writes in a session (~0.35 increments/s), wraps at 0xFFFF |
 | Client ID | 3 | Fixed bytes `43 01 82`; constant across all observed frames |
 | DID | 2 | Data identifier, **little-endian** (low byte first) |
-| Length code | 1 | `0xB0 + n` where n = data length in bytes (same encoding as Collect protocol Single Frame) |
+| Length code | 1 | Low nibble = data length in bytes (same encoding as Collect protocol). Both `0x8x` and `0xBx` high nibbles are observed in practice (e.g. `0x82` and `0xB2` both mean 2 bytes). Low nibble 0 means the next byte carries the length (≥ 16 bytes). |
 | Data | n | New value for the data point, little-endian |
 
 ### Response frame format
@@ -499,7 +505,7 @@ The reassembled UDS payload is 11 bytes, so ISO-TP multi-frame is used:
 Notes:
 - DID `0x044C` is transmitted as `4C 04` (LE), not `04 4C` (BE).
 - The response echoes the session counter `42 00`, not the DID.
-- `0xB2` = `0xB0 + 2`, indicating 2 data bytes.
+- `0xB2` indicates 2 data bytes (low nibble = 2). `0x82` is equally valid and observed on real hardware.
 
 ### Device-initiated Service 77 (CTR = 0x0000)
 
