@@ -83,11 +83,13 @@ examples:
     s77 = p.add_argument_group("Service 77 configuration")
     s77.add_argument(
         "--devices",
-        default="devices.json",
+        nargs="?",
+        const="devices.json",
+        default=None,
         metavar="FILE",
         help=(
-            "open3e devices.json to auto-configure S77 pairs and device names "
-            "(default: devices.json in current directory; silently ignored if absent)"
+            "open3e devices.json to auto-configure S77 pairs and device names. "
+            "Without a value, reads 'devices.json' in the current directory."
         ),
     )
     s77.add_argument(
@@ -155,7 +157,7 @@ def main(argv: list[str] | None = None) -> None:
 
     collect_ids = tuple(args.collect_ids) if args.collect_ids else DEFAULT_COLLECT_IDS
 
-    device_names = load_devices(args.devices)
+    device_names = load_devices(args.devices) if args.devices is not None else {}
     # Merge: device pairs first, then explicit --s77-pair (additive, no dedup needed)
     s77_pairs: list[tuple[int, int]] = list(device_names) + (args.s77_pairs or [])
 
