@@ -113,7 +113,7 @@ def test_s77_write_timeout_text():
 def test_s77_push_text():
     line = format_event(_s77_push(), use_json=False, payload=False, verbose=False)
     assert "S77-PUSH" in line
-    assert "CTR=0x0000" in line
+    assert "CTR=" not in line   # CTR always 0x0000 for push — omitted for alignment
 
 
 def test_s77_session_suppressed_without_verbose():

@@ -82,18 +82,17 @@ def format_s77_text(event: S77Event, payload: bool = False, verbose: bool = Fals
     if event.kind == "push":
         kind = "S77-PUSH"
         did = f"DID={_hex(event.did)} ({event.did})"
-        ctr = f"CTR={_hex(event.session_ctr)}"
         length = f"len={event.data_length}"
         ft = event.rsp_frame_type
 
+        # CTR is always 0x0000 for pushes (that's how they are identified),
+        # so it carries no information and is omitted to align with COLLECT.
         parts = [
             f"{ts:<{_COL_TS}}",
             f"{kind:<{_COL_KIND}}",
             f"{ids:<{_COL_IDS}}",
             f"{did:<{_COL_DID}}",
-            f"{ctr:<{_COL_CTR}}",
             f"{length:<{_COL_LEN}}",
-            f"{'':>{_COL_DT}}",
             f"{ft:<{_COL_FT}}",
         ]
         line = "".join(parts).rstrip()
