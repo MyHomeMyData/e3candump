@@ -117,6 +117,24 @@ examples:
         action="store_true",
         help="show S77 session frames (0x21/0x22 keepalives)",
     )
+    output.add_argument(
+        "--no-collect",
+        action="store_true",
+        dest="no_collect",
+        help="suppress Collect event output",
+    )
+    output.add_argument(
+        "--no-s77-push",
+        action="store_true",
+        dest="no_s77_push",
+        help="suppress S77-PUSH event output",
+    )
+    output.add_argument(
+        "--no-s77-write",
+        action="store_true",
+        dest="no_s77_write",
+        help="suppress S77 write/confirm event output",
+    )
 
     return p
 
@@ -141,6 +159,9 @@ def main(argv: list[str] | None = None) -> None:
                 use_json=args.json,
                 payload=args.payload,
                 verbose=args.verbose,
+                no_collect=args.no_collect,
+                no_s77_push=args.no_s77_push,
+                no_s77_write=args.no_s77_write,
             )
             if line is not None:
                 print(line, flush=True)

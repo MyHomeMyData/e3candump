@@ -180,12 +180,21 @@ def format_event(
     use_json: bool,
     payload: bool,
     verbose: bool,
+    no_collect: bool = False,
+    no_s77_push: bool = False,
+    no_s77_write: bool = False,
 ) -> str | None:
     if isinstance(event, CollectEvent):
+        if no_collect:
+            return None
         if use_json:
             return format_collect_json(event, payload=payload)
         return format_collect_text(event, payload=payload)
     if isinstance(event, S77Event):
+        if no_s77_push and event.kind == "push":
+            return None
+        if no_s77_write and event.kind == "write":
+            return None
         if use_json:
             return format_s77_json(event, payload=payload, verbose=verbose)
         return format_s77_text(event, payload=payload, verbose=verbose)
