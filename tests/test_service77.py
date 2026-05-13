@@ -165,6 +165,29 @@ def test_device_push_8x_length_code():
     assert ev.payload == bytes([0xB8, 0x01])
 
 
+def test_push_data_byte_high_nibble_below_8():
+    """Push where byte[8] has high nibble < 0x8: treat as data, not a length code.
+
+    Reproduces missing-data and crash seen on real hardware: DID=0x06EF with
+    byte[8]=0x2B caused len=11 / no data; DID=0x06F0 with byte[8]=0x30
+    (low nibble 0) caused IndexError trying to read payload[9].
+    """
+    d = dec()
+    for did_bytes, data_byte in [(b"\xEF\x06", 0x2B), (b"\xF0\x06", 0x30)]:
+        push_payload = (
+            bytes([0x77, 0x00, 0x00])
+            + _CLIENT_ID
+            + did_bytes
+            + bytes([data_byte])
+        )
+        events = _feed_isotp(d, RSP, push_payload, 2.0)
+        assert len(events) == 1
+        ev = events[0]
+        assert ev.kind == "push"
+        assert ev.data_length == 1
+        assert ev.payload == bytes([data_byte])
+
+
 # ── Session frames (0x21/0x22) ────────────────────────────────────────────────
 
 def test_session_frames():
