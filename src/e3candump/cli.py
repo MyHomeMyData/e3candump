@@ -147,6 +147,12 @@ examples:
         dest="no_s77_write",
         help="suppress S77 write/confirm event output",
     )
+    output.add_argument(
+        "--no-s77-read",
+        action="store_true",
+        dest="no_s77_read",
+        help="suppress S77-READ event output",
+    )
 
     return p
 
@@ -177,6 +183,7 @@ def main(argv: list[str] | None = None) -> None:
                 no_collect=args.no_collect,
                 no_s77_push=args.no_s77_push,
                 no_s77_write=args.no_s77_write,
+                no_s77_read=args.no_s77_read,
                 device_names=device_names,
             )
             if line is not None:

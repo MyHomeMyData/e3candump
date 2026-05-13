@@ -85,6 +85,32 @@ def format_s77_text(
             line += f"  data={_payload_hex(event.payload)}"
         return line
 
+    if event.kind == "read":
+        kind = "S77-READ"
+        did = f"DID={_hex(event.did)} ({event.did})"
+        ctr = f"CTR={_hex(event.session_ctr)}"
+        length = f"len={event.data_length}"
+        dt = f"dt={event.duration_ms:.1f}ms" if event.duration_ms is not None else ""
+        ft_parts = [p for p in (event.req_frame_type, event.rsp_frame_type) if p]
+        ft = "/".join(ft_parts)
+        status = event.status
+
+        parts = [
+            f"{ts:<{_COL_TS}}",
+            f"{kind:<{_COL_KIND}}",
+            f"{ids:<{_COL_IDS}}",
+            f"{did:<{_COL_DID}}",
+            f"{ctr:<{_COL_CTR}}",
+            f"{length:<{_COL_LEN}}",
+            f"{dt:<{_COL_DT}}",
+            f"{ft:<{_COL_FT}}",
+            status,
+        ]
+        line = "".join(parts).rstrip()
+        if payload and event.payload:
+            line += f"  data={_payload_hex(event.payload)}"
+        return line
+
     if event.kind == "push":
         kind = "S77-PUSH"
         did = f"DID={_hex(event.did)} ({event.did})"
@@ -165,7 +191,7 @@ def format_s77_json(
     if name:
         obj["device"] = name
 
-    if event.kind in ("write", "push"):
+    if event.kind in ("write", "push", "read"):
         obj["did"] = event.did
         obj["data_length"] = event.data_length
         if event.req_frame_type:
@@ -197,6 +223,7 @@ def format_event(
     no_collect: bool = False,
     no_s77_push: bool = False,
     no_s77_write: bool = False,
+    no_s77_read: bool = False,
     device_names: dict[tuple[int, int], str] | None = None,
 ) -> str | None:
     if isinstance(event, CollectEvent):
@@ -209,6 +236,8 @@ def format_event(
         if no_s77_push and event.kind == "push":
             return None
         if no_s77_write and event.kind == "write":
+            return None
+        if no_s77_read and event.kind == "read":
             return None
         if use_json:
             return format_s77_json(event, payload=payload, verbose=verbose, device_names=device_names)

@@ -5,7 +5,7 @@ A command-line tool for monitoring **Viessmann-specific E3 CAN-bus traffic** —
 While `candump` shows raw CAN frames, `e3candump` works at the protocol level: it reassembles multi-frame messages and outputs one decoded line per event for two Viessmann-specific protocols invisible to generic UDS tools:
 
 - **Collect** — autonomous broadcast of data-point values (no request needed)
-- **Service 77** — proprietary write protocol for protected data points, including device-initiated push notifications
+- **Service 77** — proprietary protocol for protected data points: client writes, device-initiated push notifications, and client reads
 
 For standard UDS traffic on the same bus, see the sibling tool [udsdump](https://github.com/MyHomeMyData/udsdump).
 
@@ -18,17 +18,18 @@ The tool is entirely **passive** — it never writes to the CAN bus.
 11:04:25.141  S77          HPMUMASTER          DID=0x044D (1101)      CTR=0x7540   len=3     dt=1.8ms   SF/SF  ok
 11:04:25.143  S77-PUSH     HPMUMASTER          DID=0x044D (1101)      len=3     SF
 11:04:25.144  S77-PUSH     VCMU                DID=0x018C (396)       len=2     SF
+11:04:25.150  S77-READ     VX3                 DID=0x0509 (1289)      CTR=0x3634   len=181   dt=3.2ms   MF/MF  ok
 11:04:26.200  S77          HPMUMASTER          DID=0x044D (1101)      CTR=0x7541   len=3     dt=5.0ms   SF/SF  timeout
 ```
 
 ## Features
 
-- **One line per event** — Collect frames and Service 77 write/push/session events, each on a single line
+- **One line per event** — Collect frames and Service 77 write/read/push/session events, each on a single line
 - **Multi-frame reassembly** — handles Viessmann's Collect framing and standard ISO-TP (Service 77) transparently; `SF`/`MF` in the output shows the frame type
 - **CAN-ID disambiguation** — shared IDs (e.g. `0x693` carries both Collect and S77 traffic) are resolved correctly using ISO-TP state
 - **Device names** — integrates with [open3e](https://github.com/open3e/open3e) `devices.json` to show device names instead of raw CAN-ID pairs
 - **Configurable pairs** — S77 channel pairs can be loaded from `devices.json` and/or specified explicitly with `--s77-pair`
-- **Output filters** — suppress Collect, S77-PUSH, or S77-WRITE events independently
+- **Output filters** — suppress Collect, S77-PUSH, S77-READ, or S77-WRITE events independently
 - **Optional raw payload** — `--payload` appends the reassembled data bytes as hex
 - **JSON output** — `--json` for machine-readable output, suitable for piping to `jq`
 
@@ -117,6 +118,7 @@ Output:
   --verbose, -v               Show S77 session frames (0x21/0x22 keepalives)
   --no-collect                Suppress Collect event output
   --no-s77-push               Suppress S77-PUSH event output
+  --no-s77-read               Suppress S77-READ event output
   --no-s77-write              Suppress S77 write/confirm event output
 ```
 
@@ -134,6 +136,11 @@ HH:MM:SS.mmm  COLLECT   CAN_ID              DID=0xNNNN (DDD)       len=N     FT
 HH:MM:SS.mmm  S77       DEVICE_or_IDs       DID=0xNNNN (DDD)       CTR=0xNNNN   len=N     dt=N.Nms   FT  status
 ```
 
+**Service 77 read/confirm:**
+```
+HH:MM:SS.mmm  S77-READ  DEVICE_or_IDs       DID=0xNNNN (DDD)       CTR=0xNNNN   len=N     dt=N.Nms   FT  status
+```
+
 **Service 77 device push (CTR is always 0x0000 — omitted):**
 ```
 HH:MM:SS.mmm  S77-PUSH  DEVICE_or_IDs       DID=0xNNNN (DDD)       len=N     FT
@@ -142,14 +149,14 @@ HH:MM:SS.mmm  S77-PUSH  DEVICE_or_IDs       DID=0xNNNN (DDD)       len=N     FT
 | Field | Description |
 |---|---|
 | `HH:MM:SS.mmm` | Timestamp |
-| `COLLECT` / `S77` / `S77-PUSH` | Event type |
+| `COLLECT` / `S77` / `S77-READ` / `S77-PUSH` | Event type |
 | `CAN_ID` / `DEVICE_or_IDs` | CAN-ID for Collect; device name or `REQ→RSP` hex pair for S77 |
 | `DID=0x… (DDD)` | Data Identifier in hex and decimal |
-| `CTR=0x…` | Session counter (S77 write only) |
+| `CTR=0x…` | Session counter (S77 write and read) |
 | `len=N` | Reassembled payload length in bytes |
-| `dt=N.Nms` | Round-trip latency (S77 write); absent on timeout |
+| `dt=N.Nms` | Round-trip latency (S77 write and read); absent on timeout |
 | `FT` | Frame type: `SF` (single) or `MF` (multi); `REQ/RSP` for S77 showing both directions |
-| `status` | `ok` or `timeout` (S77 write only) |
+| `status` | `ok` or `timeout` (S77 write and read) |
 
 With `--payload`, the reassembled data bytes are appended as hex: `data=de ad be ef`.
 
@@ -167,6 +174,11 @@ Collect:
 S77 write:
 ```json
 {"timestamp": 1746789865.140, "type": "s77_write", "request_id": 1666, "response_id": 1682, "session_ctr": 29952, "status": "ok", "device": "HPMUMASTER", "did": 1101, "data_length": 3, "req_frame_type": "SF", "rsp_frame_type": "SF", "duration_ms": 2.0}
+```
+
+S77 read:
+```json
+{"timestamp": 1746789865.150, "type": "s77_read", "request_id": 1089, "response_id": 1105, "session_ctr": 13876, "status": "ok", "did": 1289, "data_length": 181, "req_frame_type": "MF", "rsp_frame_type": "MF", "duration_ms": 3.2}
 ```
 
 S77 push:
@@ -211,9 +223,16 @@ pip install pytest
 pytest
 ```
 
-50 tests cover the Collect decoder, the Service 77 decoder, the ISO-TP reassembler, the output formatter, and the device name loader — no CAN hardware required.
+54 tests cover the Collect decoder, the Service 77 decoder, the ISO-TP reassembler, the output formatter, and the device name loader — no CAN hardware required.
 
 ## Changelog
+
+### 0.1.1 — 2026-05-13
+
+- Service 77 read decoder: client read request (`41 01 82` marker) matched to device response (`42 01 82`), with timeout detection
+- `--no-s77-read` output filter
+- Fix: short S77 pushes where the data byte has high nibble < `0x8` no longer cause a crash or missing payload
+- 54 tests
 
 ### 0.1.0 — 2026-05-12
 

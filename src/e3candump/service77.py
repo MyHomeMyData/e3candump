@@ -71,6 +71,15 @@ class _PendingWrite:
 
 
 @dataclass
+class _PendingRead:
+    can_id: int          # request channel
+    session_ctr: int
+    did: int
+    req_frame_type: str
+    timestamp: float
+
+
+@dataclass
 class _PendingSession:
     """Tracks the 0x21 half of a session frame pair."""
     request_id: int
@@ -101,6 +110,8 @@ class S77Decoder:
 
         # Pending writes awaiting confirmation: keyed by request_id
         self._pending_writes: dict[int, _PendingWrite] = {}
+        # Pending reads awaiting response: keyed by request_id
+        self._pending_reads: dict[int, _PendingRead] = {}
         # Pending session 0x21 frames awaiting 0x22: keyed by request_id
         self._pending_sessions: dict[int, _PendingSession] = {}
 
@@ -148,6 +159,18 @@ class S77Decoder:
             return []
 
         ctr = int.from_bytes(payload[1:3], "little")
+
+        # 8-byte read request: 0x77 CTR_L CTR_H 0x41 0x01 0x82 DID_L DID_H
+        if len(payload) == 8 and payload[3:6] == b"\x41\x01\x82":
+            did = int.from_bytes(payload[6:8], "little")
+            self._pending_reads[req_id] = _PendingRead(
+                can_id=req_id,
+                session_ctr=ctr,
+                did=did,
+                req_frame_type=frame_type,
+                timestamp=timestamp,
+            )
+            return []
 
         # 4-byte session frame: 0x77 CTR_L CTR_H 0x21
         if len(payload) == 4 and payload[3] == 0x21:
@@ -214,6 +237,30 @@ class S77Decoder:
                 )]
             return []
 
+        # Read response: 0x77 CTR_L CTR_H 0x42 0x01 0x82 DID_L DID_H len_code data...
+        if len(payload) >= 9 and payload[3:6] == b"\x42\x01\x82":
+            pending = self._pending_reads.pop(req_id, None)
+            if pending is not None and pending.session_ctr == ctr:
+                did = int.from_bytes(payload[6:8], "little")
+                data_length, data_start = _decode_length_code(payload, 8)
+                data_payload = payload[data_start:data_start + data_length]
+                dt = (timestamp - pending.timestamp) * 1000
+                return [S77Event(
+                    timestamp=pending.timestamp,
+                    request_id=req_id,
+                    response_id=rsp_id,
+                    kind="read",
+                    session_ctr=ctr,
+                    did=did,
+                    data_length=data_length,
+                    req_frame_type=pending.req_frame_type,
+                    rsp_frame_type=frame_type,
+                    status="ok",
+                    duration_ms=dt,
+                    payload=bytes(data_payload),
+                )]
+            return []
+
         # Positive confirmation: 0x77 CTR_L CTR_H 0x44
         if len(payload) == 4 and payload[3] == 0x44:
             pending = self._pending_writes.pop(req_id, None)
@@ -260,14 +307,14 @@ class S77Decoder:
         return []
 
     def flush_timeouts(self, now: float) -> list[S77Event]:
-        """Return timeout events for pending writes that have exceeded the timeout."""
+        """Return timeout events for pending writes/reads that have exceeded the timeout."""
         events: list[S77Event] = []
-        expired = [
+        expired_writes = [
             req_id
             for req_id, pw in self._pending_writes.items()
             if now - pw.timestamp >= self._timeout
         ]
-        for req_id in expired:
+        for req_id in expired_writes:
             pw = self._pending_writes.pop(req_id)
             rsp_id = self._req_to_rsp[req_id]
             events.append(S77Event(
@@ -283,5 +330,27 @@ class S77Decoder:
                 status="timeout",
                 duration_ms=None,
                 payload=pw.payload,
+            ))
+        expired_reads = [
+            req_id
+            for req_id, pr in self._pending_reads.items()
+            if now - pr.timestamp >= self._timeout
+        ]
+        for req_id in expired_reads:
+            pr = self._pending_reads.pop(req_id)
+            rsp_id = self._req_to_rsp[req_id]
+            events.append(S77Event(
+                timestamp=pr.timestamp,
+                request_id=req_id,
+                response_id=rsp_id,
+                kind="read",
+                session_ctr=pr.session_ctr,
+                did=pr.did,
+                data_length=0,
+                req_frame_type=pr.req_frame_type,
+                rsp_frame_type="",
+                status="timeout",
+                duration_ms=None,
+                payload=b"",
             ))
         return events

@@ -234,6 +234,69 @@ def test_multiple_pairs_independent():
     assert events[0].did == 0x0100
 
 
+# ── S77-READ ─────────────────────────────────────────────────────────────────
+
+def test_read_ok():
+    """S77 read request (41 01 82, 8 bytes SF) matched to response (42 01 82)."""
+    d = dec()
+    req_payload = bytes([0x77, 0x10, 0x20, 0x41, 0x01, 0x82, 0x4D, 0x04])  # DID=0x044D
+    events = _feed_isotp(d, REQ, req_payload, 1.0)
+    assert events == []
+
+    rsp_payload = bytes([0x77, 0x10, 0x20, 0x42, 0x01, 0x82, 0x4D, 0x04, 0xB3, 0x11, 0x22, 0x33])
+    events = _feed_isotp(d, RSP, rsp_payload, 1.005)
+    assert len(events) == 1
+    ev = events[0]
+    assert isinstance(ev, S77Event)
+    assert ev.kind == "read"
+    assert ev.status == "ok"
+    assert ev.session_ctr == 0x2010
+    assert ev.did == 0x044D
+    assert ev.data_length == 3
+    assert ev.payload == bytes([0x11, 0x22, 0x33])
+    assert ev.req_frame_type == "MF"  # 8-byte payload exceeds 7-byte ISO-TP SF limit
+    assert ev.rsp_frame_type == "MF"  # 12-byte response also MF
+    assert ev.duration_ms == pytest.approx(5.0, abs=1.0)
+
+
+def test_read_timeout():
+    d = dec(timeout=0.5)
+    req_payload = bytes([0x77, 0x01, 0x00, 0x41, 0x01, 0x82, 0x8C, 0x01])  # DID=0x018C
+    _feed_isotp(d, REQ, req_payload, 0.0)
+
+    events = d.flush_timeouts(0.3)
+    assert events == []
+
+    events = d.flush_timeouts(0.6)
+    assert len(events) == 1
+    ev = events[0]
+    assert ev.kind == "read"
+    assert ev.status == "timeout"
+    assert ev.did == 0x018C
+    assert ev.duration_ms is None
+
+
+def test_read_mf_response():
+    """S77 read with a multi-frame response."""
+    d = dec()
+    req_payload = bytes([0x77, 0x05, 0x00, 0x41, 0x01, 0x82, 0xBA, 0x03])  # DID=0x03BA
+    events = _feed_isotp(d, REQ, req_payload, 1.0)
+    assert events == []
+
+    # Response: 14 bytes of data via MF (length code 0xB0, next=14)
+    data = bytes(range(14))
+    rsp_payload = bytes([0x77, 0x05, 0x00, 0x42, 0x01, 0x82, 0xBA, 0x03, 0xB0, 14]) + data
+    events = _feed_isotp(d, RSP, rsp_payload, 1.008)
+    assert len(events) == 1
+    ev = events[0]
+    assert ev.kind == "read"
+    assert ev.status == "ok"
+    assert ev.did == 0x03BA
+    assert ev.data_length == 14
+    assert ev.payload == data
+    assert ev.rsp_frame_type == "MF"
+
+
 # ── ff_open flag ──────────────────────────────────────────────────────────────
 
 def test_ff_open_flag():

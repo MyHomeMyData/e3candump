@@ -890,3 +890,33 @@ can0  569   [8]  XX XX XX  04  D0 07  00 00
 ```
 
 Decoded (signed Int16, scale 1): `0x07D0` = 2000 W.
+
+---
+
+# External CAN bus — observed CAN-IDs
+
+The external CAN bus connects the Vitocal 250 indoor unit to the Vitocharge VX3
+and the E380 energy meter. The table below summarises all CAN-IDs observed in a
+one-minute passive capture; it serves as a reference for tools that need to
+filter or ignore non-Viessmann traffic.
+
+| CAN-ID(s) | Protocol | Meaning |
+|---|---|---|
+| `0x441` ↔ `0x451` | Service 77 | S77 request/response for Vitocharge VX3 (`tx = 0x43F`); also carries Collect broadcasts from VX3 on `0x451` |
+| `0x250`–`0x25D` | E380 CA | Energy meter broadcasts (see E380 section above) |
+| `0x761`, `0x747`, `0x701` | CANopen Heartbeat | Node 97 (E380 CA), Node 71 (VX3), Node 1 |
+| `0x271` | CANopen NMT/PDO | Node 0x71 (VX3) |
+| `0x647` ↔ `0x5C7` | CANopen SDO | Client/Server, Node 71 (VX3) |
+| `0x661` ↔ `0x5E1` | CANopen SDO | Client/Server, Node 97 (E380) |
+| `0x6A1` ↔ `0x6B1` | UDS ReadDataByIdentifier | Periodic read of DID `0x2707` approximately every 15 s |
+| `0x541` ↔ `0x531` | Proprietary (SDO-like) | Unknown device; exact protocol not identified |
+| `0x1FF`, `0x190` | Periodic counter | Incrementing timestamp/counter frames |
+
+**Notes:**
+
+- Only `0x441`/`0x451` carries Service 77 traffic on the external bus. No
+  additional S77 pairs were found.
+- S77-READ transactions (Client-ID `41 01 82`) have been observed on `0x441`
+  reading DID `0x0509` (181 bytes, `0xC1` escape) approximately every 5 s.
+- CANopen node IDs follow the standard formula: heartbeat CAN-ID = `0x700 +
+  node`, SDO client = `0x600 + node`, SDO server = `0x580 + node`.
