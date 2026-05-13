@@ -26,7 +26,7 @@ The tool is entirely **passive** — it never writes to the CAN bus.
 
 - **One line per event** — Collect frames and Service 77 write/read/push/session events, each on a single line
 - **Multi-frame reassembly** — handles Viessmann's Collect framing and standard ISO-TP (Service 77) transparently; `SF`/`MF` in the output shows the frame type
-- **CAN-ID disambiguation** — shared IDs (e.g. `0x693` carries both Collect and S77 traffic) are resolved correctly using ISO-TP state
+- **CAN-ID disambiguation** — shared IDs (e.g. `0x693` carries both Collect and S77 traffic) are resolved correctly using ISO-TP state. **Important:** configure `--s77-pair` for every CAN-ID that carries S77 traffic. Without it, S77-PUSH continuation frames (byte `0x21`) are structurally identical to Collect first frames and will be misidentified as Collect first frames, producing spurious Collect events.
 - **Device names** — integrates with [open3e](https://github.com/open3e/open3e) `devices.json` to show device names instead of raw CAN-ID pairs
 - **Configurable pairs** — S77 channel pairs can be loaded from `devices.json` and/or specified explicitly with `--s77-pair`
 - **Output filters** — suppress Collect, S77-PUSH, S77-READ, or S77-WRITE events independently
