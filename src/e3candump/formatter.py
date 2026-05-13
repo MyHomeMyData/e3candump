@@ -60,7 +60,7 @@ def format_s77_text(
     ids = (device_names or {}).get(pair) or f"{_hex(event.request_id)}→{_hex(event.response_id)}"
 
     if event.kind == "write":
-        kind = "S77"
+        kind = "S77-WRITE"
         did = f"DID={_hex(event.did)} ({event.did})"
         ctr = f"CTR={_hex(event.session_ctr)}"
         length = f"len={event.data_length}"

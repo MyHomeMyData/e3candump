@@ -14,12 +14,12 @@ The tool is entirely **passive** — it never writes to the CAN bus.
 ```
 11:04:25.131  COLLECT      0x0693              DID=0x0140 (320)       len=9     MF
 11:04:25.209  COLLECT      0x0693              DID=0x0141 (321)       len=2     SF
-11:04:25.140  S77          HPMUMASTER          DID=0x044D (1101)      CTR=0x7540   len=3     dt=2.0ms   SF/SF  ok
-11:04:25.141  S77          HPMUMASTER          DID=0x044D (1101)      CTR=0x7540   len=3     dt=1.8ms   SF/SF  ok
+11:04:25.140  S77-WRITE    HPMUMASTER          DID=0x044D (1101)      CTR=0x7540   len=3     dt=2.0ms   SF/SF  ok
+11:04:25.141  S77-WRITE    HPMUMASTER          DID=0x044D (1101)      CTR=0x7540   len=3     dt=1.8ms   SF/SF  ok
 11:04:25.143  S77-PUSH     HPMUMASTER          DID=0x044D (1101)      len=3     SF
 11:04:25.144  S77-PUSH     VCMU                DID=0x018C (396)       len=2     SF
 11:04:25.150  S77-READ     VX3                 DID=0x0509 (1289)      CTR=0x3634   len=181   dt=3.2ms   MF/MF  ok
-11:04:26.200  S77          HPMUMASTER          DID=0x044D (1101)      CTR=0x7541   len=3     dt=5.0ms   SF/SF  timeout
+11:04:26.200  S77-WRITE    HPMUMASTER          DID=0x044D (1101)      CTR=0x7541   len=3     dt=5.0ms   SF/SF  timeout
 ```
 
 ## Features
@@ -133,7 +133,7 @@ HH:MM:SS.mmm  COLLECT   CAN_ID              DID=0xNNNN (DDD)       len=N     FT
 
 **Service 77 write/confirm:**
 ```
-HH:MM:SS.mmm  S77       DEVICE_or_IDs       DID=0xNNNN (DDD)       CTR=0xNNNN   len=N     dt=N.Nms   FT  status
+HH:MM:SS.mmm  S77-WRITE DEVICE_or_IDs       DID=0xNNNN (DDD)       CTR=0xNNNN   len=N     dt=N.Nms   FT  status
 ```
 
 **Service 77 read/confirm:**
@@ -149,7 +149,7 @@ HH:MM:SS.mmm  S77-PUSH  DEVICE_or_IDs       DID=0xNNNN (DDD)       len=N     FT
 | Field | Description |
 |---|---|
 | `HH:MM:SS.mmm` | Timestamp |
-| `COLLECT` / `S77` / `S77-READ` / `S77-PUSH` | Event type |
+| `COLLECT` / `S77-WRITE` / `S77-READ` / `S77-PUSH` | Event type |
 | `CAN_ID` / `DEVICE_or_IDs` | CAN-ID for Collect; device name or `REQ→RSP` hex pair for S77 |
 | `DID=0x… (DDD)` | Data Identifier in hex and decimal |
 | `CTR=0x…` | Session counter (S77 write and read) |
