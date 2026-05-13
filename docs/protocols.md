@@ -508,6 +508,64 @@ Notes:
 - The response echoes the session counter `42 00`, not the DID.
 - `0xB2` indicates 2 data bytes (low nibble = 2). `0x82` is equally valid and observed on real hardware.
 
+### Service 77 read
+
+In addition to writes, a **read** variant has been observed on the Vitocharge
+VX3 external CAN bus. The client requests the current value of a specific DID;
+the device responds with the full data payload. The framing is standard ISO-TP
+with Flow Control, identical to a write exchange.
+
+#### Read request
+
+After ISO-TP reassembly (always 8 bytes):
+
+```
+Byte 0:    0x77
+Bytes 1–2: [CTR_L] [CTR_H]
+Bytes 3–5: 0x41 0x01 0x82   (read-request marker)
+Bytes 6–7: [DID_L] [DID_H]
+```
+
+No length code and no data follow — the request carries only the DID.
+
+#### Read response
+
+After ISO-TP reassembly:
+
+```
+Byte 0:    0x77
+Bytes 1–2: [CTR_L] [CTR_H]   (echoed from request)
+Bytes 3–5: 0x42 0x01 0x82   (read-response marker)
+Bytes 6–7: [DID_L] [DID_H]  (echoed from request)
+Byte  8:   length code       (same encoding as write request, see above)
+Bytes 9+:  data
+```
+
+#### Example
+
+Read DID `0x0509` (1289) from Vitocharge VX3 (`tx = 0x43F`, request channel
+`0x441`, response channel `0x451`). The value is 181 bytes (0xB5), requiring
+the `0xC1` length-code escape. CTR = `0x3634`.
+
+```
+# Client read request on 0x441 — ISO-TP total = 8 bytes
+441  [8]  10 08  77  34 36  41 01 82
+451  [8]  30 00 05 00 00 00 00 00       ← Flow Control from device
+441  [8]  21  09 05  00 00 00 00 00
+#         ↑─────↑
+#         DID = 0x0509 LE
+
+# Device read response on 0x451 — ISO-TP total = 192 bytes
+451  [8]  10 C0  77  34 36  42 01 82
+441  [8]  30 00 05 00 00 00 00 00       ← Flow Control from client
+451  [8]  21  09 05  B0 C1 B5  00 00
+#         ↑─────↑  ↑────────↑
+#         DID echo  len=181 (0xC1 escape)
+451  [8]  22 ... (26 frames total, SN wraps 0x2F → 0x20, padded with 0x55)
+```
+
+---
+
 ### Device-initiated Service 77 (CTR = 0x0000)
 
 The device can initiate Service 77 frames toward the client, always with
@@ -657,6 +715,24 @@ are addressed to specific client channels (with ISO-TP ACK); Collect broadcasts
 are unaddressed and require no flow control. A receiver handling both protocols
 on the same CAN-ID will typically observe one or the other depending on whether
 a write session is active on the bus.
+
+---
+
+### Service 77 opcode summary
+
+All Service 77 frames start with SID `0x77`. The byte or bytes immediately
+following the session counter (bytes 3–5 of the reassembled payload) identify
+the frame type:
+
+| Bytes 3–5 | Total payload | Direction | Meaning |
+|---|---|---|---|
+| `43 01 82` | ≥ 10 bytes | Client → Device | **Write request** (data follows) |
+| `0x44` (byte 3 only) | 4 bytes | Device → Client | **Write confirmation** (echoes CTR) |
+| `43 01 82`, CTR = `0x0000` | ≥ 10 bytes | Device → Client | **Push / sync** (device-initiated) |
+| `0x21` (byte 3 only) | 4 bytes | Client → Device | **Session keepalive** request |
+| `0x22` (byte 3 only) | 4 bytes | Device → Client | **Session keepalive** response |
+| `41 01 82` | 8 bytes | Client → Device | **Read request** (DID only, no data) |
+| `42 01 82` | ≥ 10 bytes | Device → Client | **Read response** (echoes CTR + DID, data follows) |
 
 ---
 
