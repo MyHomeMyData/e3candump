@@ -57,14 +57,15 @@ class CollectDecoder:
 
         b0 = data[0]
 
+        state = self._state.get(can_id)
+
+        # --- Continuation Frame (checked first: SN 0x21 recurs after 0x2F→0x20→0x21 wrap) ---
+        if state is not None and b0 == state.next_sn:
+            return self._handle_cf(can_id, data, state)
+
         # --- First Frame detection ---
         if b0 == 0x21:
             return self._handle_ff(can_id, data, timestamp)
-
-        # --- Continuation Frame ---
-        state = self._state.get(can_id)
-        if state is not None and b0 == state.next_sn:
-            return self._handle_cf(can_id, data, state)
 
         # Not a Collect frame for this CAN-ID right now
         return None

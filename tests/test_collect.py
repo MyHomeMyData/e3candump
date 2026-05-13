@@ -87,15 +87,42 @@ def test_length_b0_c1_escape():
 # ── Sequence number wrapping ─────────────────────────────────────────────────
 
 def test_sn_wrap_0x2f_to_0x20():
-    """SN wraps from 0x2F back to 0x20."""
+    """SN wraps from 0x2F back to 0x20, payload completes on CF with SN=0x20."""
     d = dec()
-    # 0xB0 0x62 = 98 bytes: FF has 3 bytes, need 95 more in 14 CFs (7 each = 98, -3 = 95)
+    # length=98: 3 bytes from FF + 14 CFs × 7 = 98 bytes exactly
     ff = bytes([0x21, 0x40, 0x01, 0xB0, 0x62, 0xD1, 0xD2, 0xD3])
     d.feed(CAN_ID, ff, 1.0)
-    # CFs: sn 0x22..0x2F (14 CFs), then 0x20
-    for sn in range(2, 16):
+    ev = None
+    for sn in range(2, 16):   # SN 0x22..0x2F (14 CFs)
         actual_sn = 0x20 | (sn & 0x0F)
-        d.feed(CAN_ID, bytes([actual_sn] + [sn] * 7), float(sn))
+        ev = d.feed(CAN_ID, bytes([actual_sn] + [sn] * 7), float(sn))
+    assert isinstance(ev, CollectEvent)
+    assert ev.did == 0x0140
+    assert ev.data_length == 98
+    assert ev.frame_type == "MF"
+
+
+def test_sn_wrap_through_0x21():
+    """Payload long enough that SN wraps 0x2F→0x20→0x21; the 0x21 CF must not be
+    misidentified as a new First Frame (regression for DID 0x03BA / 181-byte case)."""
+    d = dec()
+    # length=109 (0x6D): 3 bytes from FF + 15 CFs (0x22..0x2F, 0x20) + 1 CF (0x21) = 109
+    data = bytes(range(109))
+    ff = bytes([0x21, 0xBA, 0x03, 0xB0, 0x6D]) + data[0:3]
+    d.feed(CAN_ID, ff, 1.0)
+    ev = None
+    offset = 3
+    sn = 0x22
+    while offset < len(data):
+        chunk = data[offset:offset + 7]
+        frame = bytes([sn]) + chunk + bytes(7 - len(chunk))
+        ev = d.feed(CAN_ID, frame, 1.0)
+        offset += 7
+        sn = sn + 1 if sn < 0x2F else 0x20
+    assert isinstance(ev, CollectEvent), "SN=0x21 CF was misidentified as a new FF"
+    assert ev.did == 0x03BA
+    assert ev.data_length == 109
+    assert ev.payload == data
 
 
 # ── Unknown CAN-ID ───────────────────────────────────────────────────────────
