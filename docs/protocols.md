@@ -1,164 +1,5 @@
 # Description of used protocols
 
-## Unsolicited sequences (mode "collect" of clients)
-
-Viessmann E3 devices broadcast data point values on the CAN bus unsolicited,
-whenever a value changes, without any prior request.
-The format is similar to the response of a UDS ReadDataByIdentifier service,
-but uses a different length encoding and does not require a flow-control
-handshake.
-
----
-
-### CAN-ID
-
-Each E3 device transmits on a fixed CAN-ID:
-
-| Device | CAN-ID |
-|---|---|
-| Vitocharge VX3 | `0x451` |
-| Vitocal 250 (internal bus and connected systems) | `0x693` |
-
----
-
-### Frame types
-
-Every CAN frame is exactly 8 bytes.
-
-**First Frame (FF)** — marks the start of a new data point transmission:
-
-```
-Byte 0:    0x21          (always, identifies the start of a sequence)
-Byte 1:    DID_LOW       (low byte of the Data Identifier)
-Byte 2:    DID_HIGH      (high byte of the Data Identifier)
-Byte 3:    length code   (see length encoding below)
-Byte 4+:   payload       (start position depends on length code)
-```
-
-**Continuation Frame (CF)** — carries the remaining payload bytes:
-
-```
-Byte 0:    sequence byte  (starts at 0x22, increments with each frame,
-                           wraps 0x2F → 0x20)
-Byte 1–7:  payload continuation
-```
-
-The last frame is padded to 8 bytes.
-
----
-
-### Length encoding
-
-The length code in byte 3 of the First Frame encodes both payload length and
-frame type:
-
-| Byte 3 (`v3`) | Byte 4 (`v4`) | Type | Payload length | Payload starts at |
-|---|---|---|---|---|
-| low nibble 1–4 | any | Single Frame | low nibble of `v3` (1–4 bytes) | Byte 4 |
-| low nibble 5–F | any | Multi Frame | low nibble of `v3` (5–15 bytes) | Byte 4 |
-| low nibble 0 | ≠ `0xC1` | Multi Frame | `v4` (16–255 bytes) | Byte 5 |
-| low nibble 0 | `0xC1` | Multi Frame | Byte 5 (`v5`) | Byte 6 |
-
-**Length encoding rule:** the payload length is always the **low nibble** of
-byte 3 (`v3 & 0x0F`). The high nibble is irrelevant for length purposes;
-byte 3 at this position is always a length code.
-Observed high-nibble values include `0x8` and `0xB`; both encode the same
-lengths (e.g. `0x82` and `0xB2` both mean 2 bytes).
-
-Low nibble = 0 signals a two-byte length field: the actual length is in
-byte 4 (`v4`), except when `v4 = 0xC1`, which is an escape byte — the true
-length is then in byte 5 (`v5`). The `0xC1` escape avoids ambiguity when the
-payload length value itself would equal `0xB5` or `0xC1`. In practice this
-has been observed for a payload length of `0xB5` (181 bytes).
-
----
-
-### Multi-frame sequence
-
-No flow control is required. The device sends all frames back-to-back:
-
-```
-Device                          Listener
-  |                               |
-  |── First Frame ───────────────>|
-  |── Continuation Frame 1 ──────>|
-  |── Continuation Frame 2 ──────>|
-  |           …                   |
-  |── Continuation Frame n ──────>|   ← last frame, padded to 8 bytes
-```
-
----
-
-### Complete examples
-
-**Single Frame** — DID `0x09BE`, payload length 4:
-
-```
-#        seq  DID       len  payload
-can0  693 [8]  21  BE 09  B4  95 0E 00 00
-```
-`v3 = 0xB4` → low nibble = 4 → length = 4. Payload: `95 0E 00 00`.
-
----
-
-**Multi Frame** — DID `0x011A`, payload length 9:
-
-```
-#             seq  DID len payload ...
-can0  693 [8]  21 1A 01 B9 90 01 D4 00
-can0  693 [8]  22 E5 01 82 01 00 55 55
-```
-`v3 = 0xB9` → low nibble = 9 → length = 9. Payload bytes 1–4 start at byte 4
-of frame 1, bytes 5–9 follow in frame 2 (last 2 bytes are padding).
-
----
-
-**Multi Frame** — DID `0x0224`, payload length 24 (`0x18`):
-
-```
-#             seq  DID len v4 payload ...
-can0  693 [8]  21 24 02 B0 18 55 00 00
-can0  693 [8]  22 00 1A 03 00 00 5F 0A
-can0  693 [8]  23 00 00 38 0F 00 00 9B
-can0  693 [8]  24 32 00 00 57 5E 00 00
-```
-`v3 = 0xB0`, `v4 = 0x18` (≠ `0xC1`) → length = 24. Payload starts at byte 5
-of frame 1.
-
----
-
-**Multi Frame** — DID `0x0509`, payload length 181 (`0xB5`), using `0xC1` escape:
-
-```
-#             seq  DID len esc len2 payload ...
-can0  693 [8]  21 09 05 B0 C1  B5   00 00
-can0  693 [8]  22 00 00 00 00 00 00 00
-can0  693 [8]  23 00 00 00 00 00 00 00
-  ... (26 frames total) ...
-can0  693 [8]  2B 00 00 00 00 55 55 55
-```
-`v3 = 0xB0`, `v4 = 0xC1` (escape) → length = `v5 = 0xB5` = 181. Payload
-starts at byte 6 of frame 1. Last frame padded with `0x55`.
-
----
-
-### Receiver implementation checklist
-
-1. Listen on the device's CAN-ID for frames with byte 0 = `0x21` — this
-   marks the start of a new data point.
-2. Extract the DID from bytes 1–2: `DID = byte1 + 256 × byte2` (little-endian).
-3. Decode the length code in byte 3 using the table above to determine payload
-   length and start position.
-4. **Single Frame:** extract the payload directly and decode the data point.
-5. **Multi Frame:** record the expected next sequence byte (`0x22`), then
-   collect Continuation Frames until the full payload has been received.
-   - With each frame, verify byte 0 matches the expected sequence value.
-     If not, a frame was lost — discard the incomplete message.
-   - Increment the expected sequence byte after each frame; wrap `0x2F → 0x20`.
-6. Discard padding bytes beyond the declared payload length in the last frame.
-
----
-
 # UDS – ReadDataByIdentifier and WriteDataByIdentifier
 
 UDS (Unified Diagnostic Services, ISO 14229) is a diagnostic protocol used in
@@ -394,6 +235,164 @@ The wrap is at 15 → 0, not 15 → 1.
 
 **Timeout:** If no Flow Control arrives within ~1 s after a First Frame, abort
 the transmission.
+
+---
+## Unsolicited sequences (mode "collect" of clients)
+
+Viessmann E3 devices broadcast data point values on the CAN bus unsolicited,
+whenever a value changes, without any prior request.
+The format is similar to the response of a UDS ReadDataByIdentifier service,
+but uses a different length encoding and does not require a flow-control
+handshake.
+
+---
+
+### CAN-ID
+
+Each E3 device transmits on a fixed CAN-ID:
+
+| Device | CAN-ID |
+|---|---|
+| Vitocharge VX3 | `0x451` |
+| Vitocal 250 (internal bus and connected systems) | `0x693` |
+
+---
+
+### Frame types
+
+Every CAN frame is exactly 8 bytes.
+
+**First Frame (FF)** — marks the start of a new data point transmission:
+
+```
+Byte 0:    0x21          (always, identifies the start of a sequence)
+Byte 1:    DID_LOW       (low byte of the Data Identifier)
+Byte 2:    DID_HIGH      (high byte of the Data Identifier)
+Byte 3:    length code   (see length encoding below)
+Byte 4+:   payload       (start position depends on length code)
+```
+
+**Continuation Frame (CF)** — carries the remaining payload bytes:
+
+```
+Byte 0:    sequence byte  (starts at 0x22, increments with each frame,
+                           wraps 0x2F → 0x20)
+Byte 1–7:  payload continuation
+```
+
+The last frame is padded to 8 bytes.
+
+---
+
+### Length encoding
+
+The length code in byte 3 of the First Frame encodes both payload length and
+frame type:
+
+| Byte 3 (`v3`) | Byte 4 (`v4`) | Type | Payload length | Payload starts at |
+|---|---|---|---|---|
+| low nibble 1–4 | any | Single Frame | low nibble of `v3` (1–4 bytes) | Byte 4 |
+| low nibble 5–F | any | Multi Frame | low nibble of `v3` (5–15 bytes) | Byte 4 |
+| low nibble 0 | ≠ `0xC1` | Multi Frame | `v4` (16–255 bytes) | Byte 5 |
+| low nibble 0 | `0xC1` | Multi Frame | Byte 5 (`v5`) | Byte 6 |
+
+**Length encoding rule:** the payload length is always the **low nibble** of
+byte 3 (`v3 & 0x0F`). The high nibble is irrelevant for length purposes;
+byte 3 at this position is always a length code.
+Observed high-nibble values include `0x8` and `0xB`; both encode the same
+lengths (e.g. `0x82` and `0xB2` both mean 2 bytes).
+
+Low nibble = 0 signals a two-byte length field: the actual length is in
+byte 4 (`v4`), except when `v4 = 0xC1`, which is an escape byte — the true
+length is then in byte 5 (`v5`). The `0xC1` escape avoids ambiguity when the
+payload length value itself would equal `0xB5` or `0xC1`. In practice this
+has been observed for a payload length of `0xB5` (181 bytes).
+
+---
+
+### Multi-frame sequence
+
+No flow control is required. The device sends all frames back-to-back:
+
+```
+Device                          Listener
+  |                               |
+  |── First Frame ───────────────>|
+  |── Continuation Frame 1 ──────>|
+  |── Continuation Frame 2 ──────>|
+  |           …                   |
+  |── Continuation Frame n ──────>|   ← last frame, padded to 8 bytes
+```
+
+---
+
+### Complete examples
+
+**Single Frame** — DID `0x09BE`, payload length 4:
+
+```
+#        seq  DID       len  payload
+can0  693 [8]  21  BE 09  B4  95 0E 00 00
+```
+`v3 = 0xB4` → low nibble = 4 → length = 4. Payload: `95 0E 00 00`.
+
+---
+
+**Multi Frame** — DID `0x011A`, payload length 9:
+
+```
+#             seq  DID len payload ...
+can0  693 [8]  21 1A 01 B9 90 01 D4 00
+can0  693 [8]  22 E5 01 82 01 00 55 55
+```
+`v3 = 0xB9` → low nibble = 9 → length = 9. Payload bytes 1–4 start at byte 4
+of frame 1, bytes 5–9 follow in frame 2 (last 2 bytes are padding).
+
+---
+
+**Multi Frame** — DID `0x0224`, payload length 24 (`0x18`):
+
+```
+#             seq  DID len v4 payload ...
+can0  693 [8]  21 24 02 B0 18 55 00 00
+can0  693 [8]  22 00 1A 03 00 00 5F 0A
+can0  693 [8]  23 00 00 38 0F 00 00 9B
+can0  693 [8]  24 32 00 00 57 5E 00 00
+```
+`v3 = 0xB0`, `v4 = 0x18` (≠ `0xC1`) → length = 24. Payload starts at byte 5
+of frame 1.
+
+---
+
+**Multi Frame** — DID `0x0509`, payload length 181 (`0xB5`), using `0xC1` escape:
+
+```
+#             seq  DID len esc len2 payload ...
+can0  693 [8]  21 09 05 B0 C1  B5   00 00
+can0  693 [8]  22 00 00 00 00 00 00 00
+can0  693 [8]  23 00 00 00 00 00 00 00
+  ... (26 frames total) ...
+can0  693 [8]  2B 00 00 00 00 55 55 55
+```
+`v3 = 0xB0`, `v4 = 0xC1` (escape) → length = `v5 = 0xB5` = 181. Payload
+starts at byte 6 of frame 1. Last frame padded with `0x55`.
+
+---
+
+### Receiver implementation checklist
+
+1. Listen on the device's CAN-ID for frames with byte 0 = `0x21` — this
+   marks the start of a new data point.
+2. Extract the DID from bytes 1–2: `DID = byte1 + 256 × byte2` (little-endian).
+3. Decode the length code in byte 3 using the table above to determine payload
+   length and start position.
+4. **Single Frame:** extract the payload directly and decode the data point.
+5. **Multi Frame:** record the expected next sequence byte (`0x22`), then
+   collect Continuation Frames until the full payload has been received.
+   - With each frame, verify byte 0 matches the expected sequence value.
+     If not, a frame was lost — discard the incomplete message.
+   - Increment the expected sequence byte after each frame; wrap `0x2F → 0x20`.
+6. Discard padding bytes beyond the declared payload length in the last frame.
 
 ---
 
